@@ -1,0 +1,155 @@
+from PIL import Image, ImageFont, ImageDraw, ImageEnhance
+import os
+import random
+import textwrap
+from tqdm import tqdm  # For progress bar
+
+# Create output directory
+output_dir = "CaptionedImages"
+os.makedirs(output_dir, exist_ok=True)
+
+# Function to check if a file is an image
+def is_image_file(file):
+    return file.lower().endswith((".jpg", ".jpeg", ".png"))
+
+# Function to wrap text for long captions
+def wrap_text(text, font, max_width):
+    lines = []
+    words = text.split()
+    while words:
+        line = ''
+        while words and font.getsize(line + words[0])[0] <= max_width:
+            line += (words.pop(0) + " ")
+        lines.append(line.strip())
+    return lines
+
+# Function to auto-detect available fonts
+def get_available_fonts():
+    return [f for f in os.listdir() if f.lower().endswith(".ttf")]
+
+# Load random font
+available_fonts = get_available_fonts()
+if available_fonts:
+    font_path = random.choice(available_fonts)
+else:
+    font_path = "arial.ttf"  # Default to Arial if no fonts found
+
+# Load captions from a file or use defaults
+if os.path.exists("captions.txt"):
+    with open("captions.txt", "r", encoding="utf-8") as file:
+        captionarr = [line.strip() for line in file.readlines()]
+else:
+    captionarr = ["🔥 First caption!", "🌟 Second awesome caption!", "🎉 Another great caption!"]
+
+# Allow user input for captions
+print("\nDo you want to enter custom captions? (yes/no)")
+if input("> ").strip().lower() == "yes":
+    captionarr = []
+    while True:
+        caption = input("Enter a caption (or press Enter to finish): ").strip()
+        if not caption:
+            break
+        captionarr.append(caption)
+
+# Caption positioning options
+caption_positions = ["top", "middle", "bottom"]
+
+# Watermark settings
+add_logo_watermark = True  # Toggle logo watermark
+watermark_logo_path = "logo.png"  # Path to watermark logo
+
+count = 0
+files = [f for f in os.listdir('.') if is_image_file(f)]
+if not files:
+    print("❌ No image files found in the directory.")
+    exit()
+
+# Processing images with progress bar
+for f in tqdm(files, desc="Processing Images"):
+    try:
+        img = Image.open(f)
+        width, height = img.size
+
+        # Resize while maintaining aspect ratio
+        base_width = 1200
+        wpercent = base_width / float(width)
+        hsize = int(float(height) * wpercent)
+        img = img.resize((base_width, hsize), Image.LANCZOS)
+
+        # Convert to RGB if needed
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        draw = ImageDraw.Draw(img)
+
+        # Auto-scale font size
+        font_size = max(30, img.width // 40)
+        font = ImageFont.truetype(random.choice(available_fonts), font_size)
+
+        # Select caption randomly
+        caption = random.choice(captionarr)
+
+        # Wrap text if too long
+        wrapped_caption = wrap_text(caption, font, img.width - 100)
+
+        # Select a random caption position
+        caption_position = random.choice(caption_positions)
+
+        # Calculate text height
+        text_height = sum(font.getsize(line)[1] for line in wrapped_caption)
+
+        # Determine position
+        if caption_position == "top":
+            text_y = 50
+        elif caption_position == "middle":
+            text_y = (img.height - text_height) // 2
+        else:  # Default to bottom
+            text_y = img.height - text_height - 50
+
+        # Apply random color gradient to text
+        text_color = random.choice(["white", "yellow", "red", "cyan", "lime"])
+
+        # Function to draw text with a gradient effect
+        def draw_gradient_text(draw, text, position, font, color1, color2):
+            x, y = position
+            for i in range(0, font.getsize(text)[1], 2):
+                color = tuple(int(color1[j] + (color2[j] - color1[j]) * (i / font.getsize(text)[1])) for j in range(3))
+                draw.text((x, y + i), text, font=font, fill=color)
+
+        # Draw the caption (center-aligned)
+        for line in wrapped_caption:
+            text_size = draw.textbbox((0, 0), line, font=font)
+            line_width = text_size[2] - text_size[0]
+            draw_gradient_text(draw, line, ((img.width - line_width) // 2, text_y), font, (255, 255, 255), (255, 0, 0))
+            text_y += font.getsize(line)[1]
+
+        # Add watermark logo if enabled
+        if add_logo_watermark and os.path.exists(watermark_logo_path):
+            try:
+                logo = Image.open(watermark_logo_path).convert("RGBA")
+
+                # Resize logo to fit in the bottom-right corner
+                logo_size = (img.width // 10, img.width // 10)
+                logo = logo.resize(logo_size, Image.LANCZOS)
+
+                # Position the watermark
+                logo_x = img.width - logo.width - 20
+                logo_y = img.height - logo.height - 20
+
+                # Add transparency
+                logo = ImageEnhance.Brightness(logo).enhance(0.7)
+
+                # Paste watermark on image
+                img.paste(logo, (logo_x, logo_y), logo)
+            except Exception as e:
+                print(f"⚠️ Error adding watermark: {e}")
+
+        # Save processed image
+        output_path = os.path.join(output_dir, f)
+        img.save(output_path)
+        count += 1
+
+    except Exception as e:
+        print(f"❌ Error processing {f}: {e}")
+
+print(f"\n🎉 Done! {count} images processed. Check the '{output_dir}' folder.")
